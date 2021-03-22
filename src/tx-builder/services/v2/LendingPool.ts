@@ -1,4 +1,4 @@
-import { BigNumber, constants, utils } from 'ethers';
+import { BigNumber, constants, utils, BigNumberish, BytesLike } from 'ethers';
 import {
   API_ETH_MOCK_ADDRESS,
   commonContractAddressBetweenMarketsV2,
@@ -21,6 +21,7 @@ import {
   TokenMetadataType,
   transactionType,
   tStringDecimalUnits,
+  tEthereumAddress,
 } from '../../types';
 import { getTxValue, parseNumber } from '../../utils/parsings';
 import { LPValidator } from '../../validators/methodValidators';
@@ -45,6 +46,38 @@ import {
 import LiquiditySwapAdapterInterface from '../../interfaces/LiquiditySwapAdapter';
 import RepayWithCollateralAdapterInterface from '../../interfaces/RepayWithCollateralAdapter';
 import BaseService from '../BaseService';
+
+const buildParaSwapLiquiditySwapParams = (
+  assetToSwapTo: tEthereumAddress,
+  minAmountToReceive: BigNumberish,
+  swapAllBalanceOffset: BigNumberish,
+  swapCalldata: string | Buffer,
+  augustus: tEthereumAddress,
+  permitAmount: BigNumberish,
+  deadline: BigNumberish,
+  v: BigNumberish,
+  r: string | Buffer | BytesLike,
+  s: string | Buffer | BytesLike
+) => {
+  return utils.defaultAbiCoder.encode(
+    [
+      'address',
+      'uint256',
+      'uint256',
+      'bytes',
+      'address',
+      'tuple(uint256,uint256,uint8,bytes32,bytes32)',
+    ],
+    [
+      assetToSwapTo,
+      minAmountToReceive,
+      swapAllBalanceOffset,
+      swapCalldata,
+      augustus,
+      [permitAmount, deadline, v, r, s],
+    ]
+  );
+};
 
 export default class LendingPool
   extends BaseService<ILendingPool>
@@ -601,6 +634,19 @@ export default class LendingPool
       this.lendingPoolAddress
     );
 
+    const params = buildParaSwapLiquiditySwapParams(
+      toAsset,
+      amountSlippageConverted,
+      swapAll ? 4 + 2 * 32 : 0,
+      'callData',
+      'augustus',
+      permitParams.amount,
+      permitParams.deadline,
+      permitParams.v,
+      permitParams.r,
+      permitParams.s
+    );
+
     if (flash) {
       const FLASHLOAN_PREMIUM_TOTAL: BigNumber = await lendingPoolContract.FLASHLOAN_PREMIUM_TOTAL();
       const convertedAmountNoFees: string = BigNumber.from(convertedAmount)
@@ -619,31 +665,6 @@ export default class LendingPool
       const convertedAmountWithSurplus: string = parseNumber(
         amountWithSurplus,
         tokenDecimals
-      );
-
-      const params: string = utils.defaultAbiCoder.encode(
-        [
-          'address[]',
-          'uint256[]',
-          'bool[]',
-          'uint256[]',
-          'uint256[]',
-          'uint8[]',
-          'bytes32[]',
-          'bytes32[]',
-          'bool[]',
-        ],
-        [
-          [toAsset],
-          [amountSlippageConverted],
-          [swapAll],
-          [permitParams.amount],
-          [permitParams.deadline],
-          [permitParams.v],
-          [permitParams.r],
-          [permitParams.s],
-          [useEthPath || false],
-        ]
       );
 
       const txCallback: () => Promise<transactionType> = this.generateTxCallback(
@@ -675,6 +696,16 @@ export default class LendingPool
     }
 
     // Direct call to swap and deposit
+    const swapAndDepositTx: EthereumTransactionTypeExtended = await this.liquiditySwapAdapterService.swapAndDeposit(
+      fromAsset,
+      toAsset,
+      convertedAmount,
+      amountSlippageConverted,
+      swapAll ? 4 + 2 * 32 : 0,
+      'swapCallData',
+      'augustus',
+      permitParams
+    );
     const swapAndDepositTx: EthereumTransactionTypeExtended = await this.liquiditySwapAdapterService.swapAndDeposit(
       {
         user,
