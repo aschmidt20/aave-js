@@ -43,7 +43,7 @@ import {
   IsPositiveAmount,
   IsPositiveOrMinusOneAmount,
 } from '../../validators/paramValidators';
-import LiquiditySwapAdapterInterface from '../../interfaces/LiquiditySwapAdapter';
+import LiquiditySwapAdapterInterface from '../../interfaces/LiquiditySwapAdapterParaswap';
 import RepayWithCollateralAdapterInterface from '../../interfaces/RepayWithCollateralAdapter';
 import BaseService from '../BaseService';
 
@@ -51,7 +51,7 @@ const buildParaSwapLiquiditySwapParams = (
   assetToSwapTo: tEthereumAddress,
   minAmountToReceive: BigNumberish,
   swapAllBalanceOffset: BigNumberish,
-  swapCalldata: string | Buffer,
+  swapCalldata: string | Buffer | BytesLike,
   augustus: tEthereumAddress,
   permitAmount: BigNumberish,
   deadline: BigNumberish,
@@ -564,6 +564,7 @@ export default class LendingPool
     @IsEthAddress('fromAToken')
     @IsEthAddress('toAsset')
     @IsEthAddress('onBehalfOf')
+    @IsEthAddress('augustus')
     @IsPositiveAmount('fromAmount')
     @IsPositiveAmount('toAmount')
     {
@@ -579,7 +580,8 @@ export default class LendingPool
       swapAll,
       onBehalfOf,
       referralCode,
-      useEthPath,
+      augustus,
+      swapCallData,
     }: LPSwapCollateral
   ): Promise<EthereumTransactionTypeExtended[]> {
     const txs: EthereumTransactionTypeExtended[] = [];
@@ -638,8 +640,8 @@ export default class LendingPool
       toAsset,
       amountSlippageConverted,
       swapAll ? 4 + 2 * 32 : 0,
-      'callData',
-      'augustus',
+      swapCallData,
+      augustus,
       permitParams.amount,
       permitParams.deadline,
       permitParams.v,
@@ -697,26 +699,16 @@ export default class LendingPool
 
     // Direct call to swap and deposit
     const swapAndDepositTx: EthereumTransactionTypeExtended = await this.liquiditySwapAdapterService.swapAndDeposit(
-      fromAsset,
-      toAsset,
-      convertedAmount,
-      amountSlippageConverted,
-      swapAll ? 4 + 2 * 32 : 0,
-      'swapCallData',
-      'augustus',
-      permitParams
-    );
-    const swapAndDepositTx: EthereumTransactionTypeExtended = await this.liquiditySwapAdapterService.swapAndDeposit(
       {
         user,
         assetToSwapFrom: fromAsset,
         assetToSwapTo: toAsset,
-        amountToSwap: swapAll
-          ? constants.MaxUint256.toString()
-          : convertedAmount,
+        amountToSwap: convertedAmount,
         minAmountToReceive: amountSlippageConverted,
+        swapAll,
+        swapCallData,
+        augustus,
         permitParams,
-        useEthPath,
       }
     );
 
